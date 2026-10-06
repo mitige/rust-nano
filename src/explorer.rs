@@ -122,7 +122,8 @@ fn scan_git(root: &Path) -> HashMap<PathBuf, char> {
 
 impl Explorer {
     pub fn new(root: PathBuf) -> Self {
-        let root = root.canonicalize().unwrap_or(root);
+        // absolute() : normalise sans produire le préfixe \\?\ de Windows
+        let root = std::path::absolute(&root).unwrap_or(root);
         let mut ex = Self {
             expanded: HashSet::from([root.clone()]),
             git: scan_git(&root),
@@ -358,7 +359,8 @@ pub struct FileSearch {
 
 impl FileSearch {
     pub fn new(root: PathBuf) -> Self {
-        let root = root.canonicalize().unwrap_or(root);
+        // absolute() : normalise sans produire le préfixe \\?\ de Windows
+        let root = std::path::absolute(&root).unwrap_or(root);
         let mut fs = Self {
             root,
             filter: String::new(),
