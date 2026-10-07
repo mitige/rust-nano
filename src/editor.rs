@@ -1753,13 +1753,8 @@ fn draw(frame: &mut Frame, ed: &mut Editor) {
                 Constraint::Min(10),
             ])
             .split(chunks[1]);
-        // titre fixe : le contenu parle, l'étiquette nomme le panneau
-        let inner = draw_box(
-            frame,
-            sp[0],
-            &[(" explorer ".into(), Ed::dim())],
-            border_for(ed.focus == Focus::Explorer),
-        );
+        // boîte nue : la bordure colorée + le badge suffisent au focus
+        let inner = draw_box(frame, sp[0], &[], border_for(ed.focus == Focus::Explorer));
         if let Some(ex) = &mut ed.explorer {
             draw_explorer(frame, ex, inner);
         }
@@ -1767,13 +1762,8 @@ fn draw(frame: &mut Frame, ed: &mut Editor) {
     } else {
         chunks[1]
     };
-    // titre fixe : « editeur » — le fichier vit dans le breadcrumb et la
-    // statusline ; ● corail si modifié
-    let mut title: Vec<(String, Color)> = vec![(" editeur".into(), Ed::dim())];
-    if ed.modified {
-        title.push((" ●".into(), Ed::accent()));
-    }
-    title.push((" ".into(), Ed::dim()));
+    // boîte nue — le fichier vit dans le breadcrumb et la statusline
+    let title: Vec<(String, Color)> = Vec::new();
     // le terminal prend le bas de la colonne éditeur quand il est ouvert
     let (editor_area, term_area) = if ed.term.is_some() {
         let sp = Layout::default()
@@ -1973,8 +1963,12 @@ fn draw_search(frame: &mut Frame, fs: &mut FileSearch, zone: ratatui::layout::Re
                 let rel = fs.rel(path);
                 let selected = start + i == sel;
                 let mut spans = vec![Span::raw(if selected { "▎" } else { " " })];
-                let icon_color = file_color(rel.rsplit('/').next().unwrap_or(&rel), false);
-                spans.push(Span::styled("◆ ", Style::default().fg(icon_color)));
+                let fname = rel.rsplit('/').next().unwrap_or(&rel);
+                let icon_color = file_color(fname, false);
+                spans.push(Span::styled(
+                    format!("{} ", file_icon(fname, false)),
+                    Style::default().fg(icon_color),
+                ));
                 match rel.rsplit_once('/') {
                     Some((dir, name)) => {
                         spans.push(Span::styled(format!("{dir}/"), Style::default().fg(Ed::gutter())));
@@ -2131,6 +2125,29 @@ fn draw_diagnostics(frame: &mut Frame, ed: &Editor, zone: ratatui::layout::Rect)
     frame.render_widget(Paragraph::new(lines), inner);
 }
 
+/// Mini-icône du fichier : la lettre cerclée du langage, teintée par
+/// file_color — Ⓒ pour le C, Ⓡ pour Rust, Ⓟ pour Python…
+fn file_icon(name: &str, is_dir: bool) -> &'static str {
+    if is_dir {
+        return "";
+    }
+    let lower = name.to_ascii_lowercase();
+    let ext = lower.rsplit('.').next().unwrap_or("");
+    match ext {
+        "c" | "h" => "Ⓒ",
+        "rs" => "Ⓡ",
+        "py" => "Ⓟ",
+        "js" | "ts" | "mjs" => "Ⓙ",
+        "sh" | "bash" | "zsh" => "Ⓢ",
+        "html" | "htm" => "Ⓗ",
+        "css" => "ⓒ",
+        "md" | "txt" => "Ⓜ",
+        "toml" | "json" | "yaml" | "yml" | "lock" | "cfg" => "Ⓣ",
+        _ if lower == "makefile" || ext == "mk" => "Ⓚ",
+        _ => "◆",
+    }
+}
+
 /// Couleur d'un fichier selon son type — chaque famille a sa teinte.
 fn file_color(name: &str, is_dir: bool) -> Color {
     if is_dir {
@@ -2247,9 +2264,9 @@ fn draw_explorer(frame: &mut Frame, ex: &mut Explorer, area: ratatui::layout::Re
                     let arrow = if row.expanded { "▾ " } else { "▸ " };
                     spans.push(Span::styled(arrow, Style::default().fg(Ed::cyan())));
                 } else {
-                    // icône du langage : ◆ teinté par type de fichier
+                    // mini-icône du langage, teintée
                     spans.push(Span::styled(
-                        "◆ ",
+                        format!("{} ", file_icon(&row.name, false)),
                         Style::default().fg(file_color(&row.name, false)),
                     ));
                 }
@@ -2285,12 +2302,7 @@ fn vt_color(c: vt100::Color, default: Color) -> Color {
 
 /// Le panneau terminal : boîte arrondie, cellules vt100 rendues en Minuit.
 fn draw_terminal(frame: &mut Frame, term: &mut TermPane, area: ratatui::layout::Rect, focused: bool) {
-    let inner = draw_box(
-        frame,
-        area,
-        &[(" terminal ".into(), Ed::dim())],
-        border_for(focused),
-    );
+    let inner = draw_box(frame, area, &[], border_for(focused));
     term.resize(inner.height, inner.width);
     let screen = term.parser.screen();
     let mut lines: Vec<Line> = Vec::with_capacity(inner.height as usize);
@@ -2925,20 +2937,38 @@ other.rs:1:1: error: pas notre fichier
         assert!(!text.contains("piscine — sobre"), "plus de tagline");
     }
 
-    /// Les boîtes portent des étiquettes fixes : « explorer », « editeur » —
-    /// le nom du fichier vit dans le breadcrumb, ● signale la modification.
+    /// Boîtes nues (pas de titre), ● de modification dans le breadcrumb,
+    /// icônes de langage dans l'explorateur.
     #[test]
-    fn etiquettes_fixes_des_boites() {
+    fn boites_nues_et_icones() {
+        let dir = std::env::temp_dir().join(format!("cnano-ico-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.c"), "int a;\n").unwrap();
+        std::fs::write(dir.join("b.rs"), "fn b() {}\n").unwrap();
         let mut ed = Editor::open(None).unwrap();
         ed.file = Some(std::path::PathBuf::from("/tmp/demo.c"));
         ed.modified = true;
         ed.lines = vec!["int x;".into()];
-        ed.explorer = Some(Explorer::new(std::env::temp_dir()));
+        ed.explorer = Some(Explorer::new(dir.clone()));
         let text = render_text(&mut ed, 90, 28);
-        assert!(text.contains("editeur"), "étiquette éditeur");
-        assert!(text.contains("●"), "l'indicateur modifié suit");
+        assert!(!text.contains(" editeur"), "plus de titre éditeur");
+        assert!(!text.contains(" explorer "), "plus de titre explorateur");
         assert!(text.contains("demo.c"), "le nom reste dans le breadcrumb");
-        assert!(text.contains("explorer"), "étiquette explorateur");
+        assert!(text.contains("Ⓒ"), "icône C");
+        assert!(text.contains("Ⓡ"), "icône Rust");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Le mapping langage → icône cerclée.
+    #[test]
+    fn icones_par_langage() {
+        assert_eq!(file_icon("main.c", false), "Ⓒ");
+        assert_eq!(file_icon("lib.rs", false), "Ⓡ");
+        assert_eq!(file_icon("x.py", false), "Ⓟ");
+        assert_eq!(file_icon("Makefile", false), "Ⓚ");
+        assert_eq!(file_icon("data.json", false), "Ⓣ");
+        assert_eq!(file_icon("inconnu.xyz", false), "◆");
     }
 
     /// Explorateur ouvert : deux boîtes arrondies côte à côte.
