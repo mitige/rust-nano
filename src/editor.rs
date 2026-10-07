@@ -901,9 +901,13 @@ impl Editor {
             return;
         }
 
-        // Alt-Tab / Ctrl-Tab / Shift-Tab (selon ce que livre le terminal) :
-        // cycle du focus entre panneaux
-        if key.code == KeyCode::BackTab || (key.code == KeyCode::Tab && (alt || ctrl)) {
+        // F2 / Alt-Tab / Ctrl-Tab / Shift-Tab : cycle du focus entre panneaux.
+        // F2 est le seul que TOUS les terminaux livrent toujours — Alt-Tab et
+        // Ctrl-Tab sont avalés par l'OS ou le terminal avant nous.
+        if key.code == KeyCode::F(2)
+            || key.code == KeyCode::BackTab
+            || (key.code == KeyCode::Tab && (alt || ctrl))
+        {
             self.cycle_focus();
             return;
         }
@@ -1216,7 +1220,7 @@ fn draw_welcome_float(frame: &mut Frame, area: ratatui::layout::Rect) {
         section("Fichiers"),
         entry("^T", "explorateur"),
         entry("^O", "rechercher un fichier"),
-        entry("⎇⇥", "changer de panneau"),
+        entry("F2", "changer de panneau"),
         entry("^S", "sauvegarder"),
         entry("^Q", "quitter"),
         Line::from(""),
