@@ -22,7 +22,7 @@ static THEME: LazyLock<Theme> = LazyLock::new(|| {
 /// Thème de l'éditeur : « Minuit », palette Apple sobre pensée pour le C.
 /// Embarqué à la compilation — aucun fichier requis à l'exécution.
 static EDITOR_THEME: LazyLock<Theme> = LazyLock::new(|| {
-    const MINUIT: &str = include_str!("../assets/c-nano.tmTheme");
+    const MINUIT: &str = include_str!("../assets/minuit.tmTheme");
     let mut cursor = Cursor::new(MINUIT.as_bytes());
     ThemeSet::load_from_reader(&mut cursor).unwrap_or_else(|_| {
         let set = ThemeSet::load_defaults();

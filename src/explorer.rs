@@ -122,7 +122,8 @@ fn scan_git(root: &Path) -> HashMap<PathBuf, char> {
 
 impl Explorer {
     pub fn new(root: PathBuf) -> Self {
-        // absolute() : normalise sans produire le préfixe \\?\ de Windows
+        // absolute() : normalise sans produire le préfixe \\?\ que
+        // canonicalize() collerait aux chemins sous Windows
         let root = std::path::absolute(&root).unwrap_or(root);
         let mut ex = Self {
             expanded: HashSet::from([root.clone()]),
@@ -138,6 +139,13 @@ impl Explorer {
     }
 
     // -------------------------------------------------------------- arbre
+
+    /// Recharge l'arbre depuis le disque (après création/suppression/renommage)
+    /// et rescanne les marqueurs git.
+    pub fn reload(&mut self) {
+        self.git = scan_git(&self.root);
+        self.refresh();
+    }
 
     /// Reconstruit les lignes visibles (après pliage, filtre, rafraîchissement).
     fn refresh(&mut self) {
@@ -359,7 +367,8 @@ pub struct FileSearch {
 
 impl FileSearch {
     pub fn new(root: PathBuf) -> Self {
-        // absolute() : normalise sans produire le préfixe \\?\ de Windows
+        // absolute() : normalise sans produire le préfixe \\?\ que
+        // canonicalize() collerait aux chemins sous Windows
         let root = std::path::absolute(&root).unwrap_or(root);
         let mut fs = Self {
             root,

@@ -122,7 +122,21 @@ pub fn ensure_exists() -> std::io::Result<PathBuf> {
     Ok(path)
 }
 
-pub const DEFAULT_CONFIG: &str = r##"# Configuration rust-nano
+pub const DEFAULT_CONFIG: &str = r##"# Configuration c-man
 
-# rust-nano n'a besoin d'aucune configuration — tout est embarqué.
+# Identité pour l'en-tête Epitech généré par `c-man fix --header` :
+# name = "Prénom Nom"
+# login = "prenom.nom"          # login Epitech (pour <login@epitech.eu>)
+
+
+# Règles de la Norme (valeurs = défauts piscine) :
+# max_columns = 80
+# max_function_lines = 25
+# max_functions_per_file = 5
+# forbid_for = true
+# forbid_ternary = true
+# forbid_switch = false
+# forbid_goto = true
+# return_parens = false
+# comments_in_function = false
 "##;
