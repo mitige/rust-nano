@@ -353,6 +353,20 @@ fn header_lines(project: &str, description: &str) -> Vec<String> {
     }
 }
 
+/// La disposition de départ : `c-nano dossier` → explorateur racine dessus,
+/// buffer vierge ; `c-nano fichier` → édition + racine = son dossier ;
+/// `c-nano` seul → racine = répertoire courant, buffer vierge.
+fn startup_layout(path: &Option<PathBuf>) -> (Option<PathBuf>, PathBuf) {
+    match path {
+        Some(p) if p.is_dir() => (None, p.clone()),
+        Some(p) => (Some(p.clone()), file_dir(Some(p))),
+        None => (
+            None,
+            std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        ),
+    }
+}
+
 /// Recule jusqu'à une frontière de caractère UTF-8 — le curseur ne se
 /// pose JAMAIS au milieu d'un é/à multi-octets (sinon : panique au prochain
 /// insert/remove — le crash des caractères accentués).
@@ -2026,7 +2040,12 @@ fn draw_toasts(frame: &mut Frame, ed: &mut Editor, area: ratatui::layout::Rect) 
         if !cur.is_empty() {
             lines_t.push(cur);
         }
-        lines_t.truncate(2);
+        // jamais coupé : jusqu'à 5 lignes, la dernière porte « … » si besoin
+        if lines_t.len() > 5 {
+            lines_t.truncate(5);
+            let last = lines_t.last_mut().unwrap();
+            *last = format!("{}…", last.trim_end());
+        }
         let text_w = lines_t
             .iter()
             .map(|l| UnicodeWidthStr::width(l.as_str()))
@@ -2068,14 +2087,36 @@ fn draw_diagnostics(frame: &mut Frame, ed: &Editor, zone: ratatui::layout::Rect)
     if items.is_empty() {
         return;
     }
-    let shown: Vec<&(bool, String)> = items.iter().take(4).collect();
-    let wmax = shown
+    // chaque message peut vivre sur 2 lignes — les longs libellés de norme
+    // ne sont plus jamais coupés
+    let wrap_w = 50usize;
+    let mut wrapped: Vec<(bool, String, bool)> = Vec::new(); // (err, texte, suite?)
+    for (is_err, msg) in items.iter().take(4) {
+        let words: Vec<&str> = msg.split_whitespace().collect();
+        let mut cur = String::new();
+        let mut first = true;
+        for word in words {
+            let cand = if cur.is_empty() { word.to_string() } else { format!("{cur} {word}") };
+            if UnicodeWidthStr::width(cand.as_str()) > wrap_w && !cur.is_empty() {
+                wrapped.push((*is_err, std::mem::take(&mut cur), !first));
+                first = false;
+                cur = word.to_string();
+            } else {
+                cur = cand;
+            }
+        }
+        if !cur.is_empty() {
+            wrapped.push((*is_err, cur, !first));
+        }
+    }
+    wrapped.truncate(8);
+    let wmax = wrapped
         .iter()
-        .map(|(_, m)| UnicodeWidthStr::width(m.as_str()))
+        .map(|(_, m, _)| UnicodeWidthStr::width(m.as_str()))
         .max()
         .unwrap_or(8);
-    let w = ((wmax + 6).clamp(18, 52)) as u16;
-    let h = shown.len() as u16 + 2;
+    let w = ((wmax + 8).clamp(18, 58)) as u16;
+    let h = wrapped.len() as u16 + 2;
     let rect = ratatui::layout::Rect {
         x: zone.right().saturating_sub(w + 1),
         y: zone.bottom().saturating_sub(h + 1),
@@ -2087,14 +2128,14 @@ fn draw_diagnostics(frame: &mut Frame, ed: &Editor, zone: ratatui::layout::Rect)
     let border = if any_err { Ed::red() } else { Ed::amber() };
     let title = format!(" ligne {} ", ed.cy + 1);
     let inner = draw_box(frame, rect, &[(title, Ed::dim())], border);
-    let lines: Vec<Line> = shown
+    let lines: Vec<Line> = wrapped
         .iter()
-        .map(|(is_err, msg)| {
+        .map(|(is_err, msg, suite)| {
             let (icon, color) = if *is_err { ("✗", Ed::red()) } else { ("⚠", Ed::amber()) };
-            let text: String = msg.chars().take((w as usize).saturating_sub(5)).collect();
+            let (glyph, gcolor) = if *suite { ("  ", Ed::dim()) } else { (icon, color) };
             Line::from(vec![
-                Span::styled(format!("{icon} "), Style::default().fg(color)),
-                Span::styled(text, Style::default().fg(Ed::text())),
+                Span::styled(format!("{glyph} "), Style::default().fg(gcolor)),
+                Span::styled(msg.clone(), Style::default().fg(Ed::text())),
             ])
         })
         .collect();
@@ -2390,16 +2431,14 @@ pub fn run(path: Option<PathBuf>) -> io::Result<()> {
     // couleurs est un bug, pas une préférence — c-nano la retire de SON
     // processus (l'environnement du shell reste intact).
     std::env::remove_var("NO_COLOR");
-    // un dossier en argument (`c-nano .`) → l'explorateur s'ouvre dessus,
-    // le buffer reste vierge jusqu'au premier Enter
-    let dir = path.as_ref().filter(|p| p.is_dir()).cloned();
-    let file = path.filter(|p| !p.is_dir());
+    // IDE complet dès l'ouverture : explorateur + terminal toujours visibles,
+    // le focus reste à l'éditeur (ou à l'accueil)
+    let (file, root) = startup_layout(&path);
     let mut ed = Editor::open(file.as_deref())?;
-    if let Some(d) = dir {
-        ed.explorer = Some(Explorer::new(d));
-        ed.focus = Focus::Explorer;
-        ed.status =
-            "↑↓ naviguer · Enter ouvrir · →/← plier · tapez pour filtrer · ^T fermer".into();
+    ed.explorer = Some(Explorer::new(root.clone()));
+    // pas de shell sur cette machine ? l'IDE reste entier, juste sans terminal
+    if let Ok(pane) = TermPane::spawn(&root, TERM_H.saturating_sub(2), 80) {
+        ed.term = Some(pane);
     }
     crossterm::terminal::enable_raw_mode()?;
     crossterm::execute!(io::stdout(), crossterm::terminal::EnterAlternateScreen)?;
@@ -2648,19 +2687,37 @@ mod pair_tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// « src/x.rs » part de la racine même si la sélection est un dossier.
+    /// La disposition de départ : dossier → explorateur racine, fichier →
+    /// racine = son dossier, rien → cwd.
+    #[test]
+    fn disposition_de_depart() {
+        let cwd = std::env::current_dir().unwrap();
+        let (f, root) = startup_layout(&Some(cwd.clone()));
+        assert!(f.is_none(), "un dossier n'ouvre pas de fichier");
+        assert_eq!(root, cwd);
+        let file = cwd.join("Cargo.toml");
+        let (f, root) = startup_layout(&Some(file.clone()));
+        assert_eq!(f.as_deref(), Some(file.as_path()));
+        assert_eq!(root, cwd, "la racine suit le fichier");
+        let (f, root) = startup_layout(&None);
+        assert!(f.is_none());
+        assert_eq!(root, cwd);
+    }
+
+    /// « src/x.c » part de la racine même si la sélection est un dossier.
     #[test]
     fn creation_chemin_relatif_a_la_racine() {
         let dir = std::env::temp_dir().join(format!("cnano-rel-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("src")).unwrap();
-        std::fs::write(dir.join("src/main.rs"), "fn main() {}\n").unwrap();
+        std::fs::write(dir.join("src/main.c"), "int m;\n").unwrap();
         let mut ed = Editor::open(None).unwrap();
         ed.explorer = Some(Explorer::new(dir.clone()));
         ed.focus = Focus::Explorer;
-        ed.create_file("src/neuf.rs");
-        assert!(dir.join("src/neuf.rs").exists(), "racine + chemin, pas dossier+dossier");
-        assert!(!dir.join("src/src/neuf.rs").exists());
+        // la sélection est sur « src » (dossier) — le nom contient un /
+        ed.create_file("src/neuf.c");
+        assert!(dir.join("src/neuf.c").exists(), "racine + chemin, pas dossier+dossier");
+        assert!(!dir.join("src/src/neuf.c").exists());
         let _ = std::fs::remove_dir_all(dir);
     }
 
