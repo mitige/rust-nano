@@ -34,3 +34,6 @@ le formatage. Optionnel : `git` (branche + marqueurs dans l'explorateur).
 
 Auto-paires, notifications toast, statusline segmentée, barre IDE avec
 branche git et breadcrumb. Zéro configuration.
+
+Les icônes de fichiers utilisent les devicons d'une Nerd Font (JetBrainsMono
+Nerd Font recommandée) ; sans elle,  revient aux lettres cerclées.

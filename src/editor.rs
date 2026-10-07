@@ -1674,7 +1674,11 @@ fn draw_welcome_float(frame: &mut Frame, area: ratatui::layout::Rect) {
     let inner = draw_box(
         frame,
         modal,
-        &[(" r".into(), Ed::brand()), ("ust-nano ".into(), Ed::text())],
+        &[
+            (format!("{} ", file_icon("x.rs", false)), file_color("x.rs", false)),
+            (" r".into(), Ed::brand()),
+            ("ust-nano ".into(), Ed::text()),
+        ],
         border_for(true),
     );
     let bullet = || Span::styled("● ", Style::default().fg(Ed::cyan()));
@@ -1829,9 +1833,11 @@ fn draw_topbar(frame: &mut Frame, ed: &Editor, area: ratatui::layout::Rect) {
             _ => name.to_string(),
         };
         let dirty_w = if ed.modified { 2 } else { 0 };
-        let total = UnicodeWidthStr::width(crumb.as_str()) as u16 + dirty_w;
+        let icon = file_icon(name, false);
+        let total = UnicodeWidthStr::width(crumb.as_str()) as u16 + dirty_w + 2;
         let cx = area.x + area.width.saturating_sub(total) / 2;
-        let nx = put_seg(buf, cx, area.y, &crumb, Ed::text(), Ed::bar_bg(), false);
+        let ix = put_seg(buf, cx, area.y, icon, file_color(name, false), Ed::bar_bg(), false);
+        let nx = put_seg(buf, ix, area.y, &format!(" {crumb}"), Ed::text(), Ed::bar_bg(), false);
         if ed.modified {
             put_seg(buf, nx, area.y, " ●", Ed::accent(), Ed::bar_bg(), false);
         }
@@ -1857,7 +1863,8 @@ fn draw_statusbar(frame: &mut Frame, ed: &Editor, area: ratatui::layout::Rect) {
     // segment fichier
     if let Some(p) = &ed.file {
         let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("?");
-        x = put_seg(buf, x, area.y, &format!(" {name} "), Ed::text(), seg_bg, false);
+        x = put_seg(buf, x, area.y, &format!(" {} ", file_icon(name, false)), file_color(name, false), seg_bg, false);
+        x = put_seg(buf, x, area.y, &format!("{name} "), Ed::text(), seg_bg, false);
         if ed.modified {
             x = put_seg(buf, x, area.y, "● ", Ed::accent(), seg_bg, false);
         }
@@ -2125,12 +2132,38 @@ fn draw_diagnostics(frame: &mut Frame, ed: &Editor, zone: ratatui::layout::Rect)
     frame.render_widget(Paragraph::new(lines), inner);
 }
 
-/// Mini-icône du fichier : la lettre cerclée du langage, teintée par
-/// file_color — Ⓒ pour le C, Ⓡ pour Rust, Ⓟ pour Python…
-fn file_icon(name: &str, is_dir: bool) -> &'static str {
-    if is_dir {
-        return "";
+/// Icônes activées ? `NANO_ICONS=0` → repli lettres cerclées (terminaux
+/// sans Nerd Font). Les glyphes viennent des devicons de JetBrainsMono NF.
+fn icons_enabled() -> bool {
+    static ONCE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ONCE.get_or_init(|| std::env::var_os("NANO_ICONS").map(|v| v != "0").unwrap_or(true))
+}
+
+/// Icône devicon du fichier (les vrais logos : C , Rust , Python …).
+fn file_icon_dev(name: &str) -> &'static str {
+    let lower = name.to_ascii_lowercase();
+    let ext = lower.rsplit('.').next().unwrap_or("");
+    match ext {
+        "c" | "h" => "\u{E771}",                    // dev-c_lang
+        "rs" => "\u{E7A8}",                         // dev-rust
+        "py" => "\u{E73C}",                         // dev-python
+        "js" | "mjs" => "\u{E60C}",                 // seti-javascript
+        "ts" => "\u{E8CA}",                         // dev-typescript
+        "sh" | "bash" | "zsh" => "\u{E760}",        // dev-bash
+        "html" | "htm" => "\u{E736}",               // dev-html5
+        "css" => "\u{E749}",                        // dev-css3
+        "md" | "txt" => "\u{E73E}",                 // dev-markdown
+        "toml" => "\u{E6B2}",                       // custom-toml
+        "json" => "\u{E80B}",                       // dev-json
+        "yaml" | "yml" => "\u{E8EB}",               // dev-yaml
+        "lock" | "cfg" | "ini" => "\u{E80B}",       // dev-json
+        _ if lower == "makefile" || ext == "mk" => "\u{E673}", // seti-makefile
+        _ => "\u{F15B}",                            // fa-file
     }
+}
+
+/// Repli sans Nerd Font : lettres cerclées.
+fn file_icon_plain(name: &str) -> &'static str {
     let lower = name.to_ascii_lowercase();
     let ext = lower.rsplit('.').next().unwrap_or("");
     match ext {
@@ -2145,6 +2178,29 @@ fn file_icon(name: &str, is_dir: bool) -> &'static str {
         "toml" | "json" | "yaml" | "yml" | "lock" | "cfg" => "Ⓣ",
         _ if lower == "makefile" || ext == "mk" => "Ⓚ",
         _ => "◆",
+    }
+}
+
+/// Mini-icône du fichier : devicon si possible, lettre cerclée sinon.
+fn file_icon(name: &str, is_dir: bool) -> &'static str {
+    if is_dir {
+        return "";
+    }
+    if icons_enabled() {
+        file_icon_dev(name)
+    } else {
+        file_icon_plain(name)
+    }
+}
+
+/// Icône de dossier :  ouverte /  fermée (repli : ▾/▸).
+fn dir_icon(expanded: bool) -> &'static str {
+    if icons_enabled() {
+        if expanded { "\u{F07C}" } else { "\u{F07B}" } // fa-folder-open / fa-folder
+    } else if expanded {
+        "▾"
+    } else {
+        "▸"
     }
 }
 
@@ -2261,8 +2317,10 @@ fn draw_explorer(frame: &mut Frame, ex: &mut Explorer, area: ratatui::layout::Re
             } else {
                 spans.push(Span::raw("  ".repeat(row.depth)));
                 if row.is_dir {
-                    let arrow = if row.expanded { "▾ " } else { "▸ " };
-                    spans.push(Span::styled(arrow, Style::default().fg(Ed::cyan())));
+                    spans.push(Span::styled(
+                        format!("{} ", dir_icon(row.expanded)),
+                        Style::default().fg(Ed::cyan()),
+                    ));
                 } else {
                     // mini-icône du langage, teintée
                     spans.push(Span::styled(
@@ -2955,20 +3013,23 @@ other.rs:1:1: error: pas notre fichier
         assert!(!text.contains(" editeur"), "plus de titre éditeur");
         assert!(!text.contains(" explorer "), "plus de titre explorateur");
         assert!(text.contains("demo.c"), "le nom reste dans le breadcrumb");
-        assert!(text.contains("Ⓒ"), "icône C");
-        assert!(text.contains("Ⓡ"), "icône Rust");
+        assert!(text.contains("\u{E771}"), "icône C (devicon)");
+        assert!(text.contains("\u{E7A8}"), "icône Rust (devicon)");
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// Le mapping langage → icône cerclée.
+    /// Le mapping langage → icône devicon (codepoints de la fonte installée).
     #[test]
     fn icones_par_langage() {
-        assert_eq!(file_icon("main.c", false), "Ⓒ");
-        assert_eq!(file_icon("lib.rs", false), "Ⓡ");
-        assert_eq!(file_icon("x.py", false), "Ⓟ");
-        assert_eq!(file_icon("Makefile", false), "Ⓚ");
-        assert_eq!(file_icon("data.json", false), "Ⓣ");
-        assert_eq!(file_icon("inconnu.xyz", false), "◆");
+        assert_eq!(file_icon("main.c", false), "\u{E771}");
+        assert_eq!(file_icon("lib.rs", false), "\u{E7A8}");
+        assert_eq!(file_icon("x.py", false), "\u{E73C}");
+        assert_eq!(file_icon("Makefile", false), "\u{E673}");
+        assert_eq!(file_icon("data.json", false), "\u{E80B}");
+        assert_eq!(file_icon("inconnu.xyz", false), "\u{F15B}");
+        // repli sans Nerd Font
+        assert_eq!(file_icon_plain("main.c"), "Ⓒ");
+        assert_eq!(dir_icon(true), "\u{F07C}");
     }
 
     /// Explorateur ouvert : deux boîtes arrondies côte à côte.
