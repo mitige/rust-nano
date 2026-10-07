@@ -1753,16 +1753,11 @@ fn draw(frame: &mut Frame, ed: &mut Editor) {
                 Constraint::Min(10),
             ])
             .split(chunks[1]);
-        let root_name = ed
-            .explorer
-            .as_ref()
-            .and_then(|ex| ex.root.file_name().and_then(|n| n.to_str()))
-            .unwrap_or("projet")
-            .to_string();
+        // titre fixe : le contenu parle, l'étiquette nomme le panneau
         let inner = draw_box(
             frame,
             sp[0],
-            &[(" ".into(), Ed::ruler()), (root_name, Ed::text()), (" ".into(), Ed::ruler())],
+            &[(" explorer ".into(), Ed::dim())],
             border_for(ed.focus == Focus::Explorer),
         );
         if let Some(ex) = &mut ed.explorer {
@@ -1772,19 +1767,13 @@ fn draw(frame: &mut Frame, ed: &mut Editor) {
     } else {
         chunks[1]
     };
-    // titre de la boîte éditeur : le fichier, ● corail si modifié
-    let mut title: Vec<(String, Color)> = Vec::new();
-    match &ed.file {
-        Some(p) => {
-            title.push((" ".into(), Ed::ruler()));
-            title.push((p.display().to_string(), Ed::text()));
-            if ed.modified {
-                title.push((" ●".into(), Ed::accent()));
-            }
-            title.push((" ".into(), Ed::ruler()));
-        }
-        None => title.push((" rust-nano ".into(), Ed::dim())),
+    // titre fixe : « editeur » — le fichier vit dans le breadcrumb et la
+    // statusline ; ● corail si modifié
+    let mut title: Vec<(String, Color)> = vec![(" editeur".into(), Ed::dim())];
+    if ed.modified {
+        title.push((" ●".into(), Ed::accent()));
     }
+    title.push((" ".into(), Ed::dim()));
     // le terminal prend le bas de la colonne éditeur quand il est ouvert
     let (editor_area, term_area) = if ed.term.is_some() {
         let sp = Layout::default()
@@ -2936,16 +2925,20 @@ other.rs:1:1: error: pas notre fichier
         assert!(!text.contains("piscine — sobre"), "plus de tagline");
     }
 
-    /// Un fichier ouvert : son nom trône dans la bordure de la boîte éditeur.
+    /// Les boîtes portent des étiquettes fixes : « explorer », « editeur » —
+    /// le nom du fichier vit dans le breadcrumb, ● signale la modification.
     #[test]
-    fn nom_de_fichier_dans_la_bordure() {
+    fn etiquettes_fixes_des_boites() {
         let mut ed = Editor::open(None).unwrap();
         ed.file = Some(std::path::PathBuf::from("/tmp/demo.c"));
         ed.modified = true;
         ed.lines = vec!["int x;".into()];
+        ed.explorer = Some(Explorer::new(std::env::temp_dir()));
         let text = render_text(&mut ed, 90, 28);
-        assert!(text.contains("/tmp/demo.c"), "le nom est dans la bordure");
+        assert!(text.contains("editeur"), "étiquette éditeur");
         assert!(text.contains("●"), "l'indicateur modifié suit");
+        assert!(text.contains("demo.c"), "le nom reste dans le breadcrumb");
+        assert!(text.contains("explorer"), "étiquette explorateur");
     }
 
     /// Explorateur ouvert : deux boîtes arrondies côte à côte.
