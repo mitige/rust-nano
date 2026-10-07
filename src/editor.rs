@@ -848,7 +848,16 @@ impl Editor {
         if name.is_empty() {
             return;
         }
-        let path = self.explorer_base_dir().join(name);
+        // nom avec séparateur → relatif à la racine du projet ;
+        // nom nu → dans le dossier sélectionné
+        let path = if name.contains('/') || name.contains('\\') {
+            match &self.explorer {
+                Some(ex) => ex.root.join(name),
+                None => self.explorer_base_dir().join(name),
+            }
+        } else {
+            self.explorer_base_dir().join(name)
+        };
         if path.exists() {
             self.notify(Level::Warn, format!("{name} existe déjà"));
             return;
@@ -2636,6 +2645,22 @@ mod pair_tests {
         assert!(ed.confirm_delete.is_some());
         ed.on_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::empty()));
         assert!(!dir.join("dix.c").exists(), "supprimé du disque");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// « src/x.rs » part de la racine même si la sélection est un dossier.
+    #[test]
+    fn creation_chemin_relatif_a_la_racine() {
+        let dir = std::env::temp_dir().join(format!("cnano-rel-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(dir.join("src/main.rs"), "fn main() {}\n").unwrap();
+        let mut ed = Editor::open(None).unwrap();
+        ed.explorer = Some(Explorer::new(dir.clone()));
+        ed.focus = Focus::Explorer;
+        ed.create_file("src/neuf.rs");
+        assert!(dir.join("src/neuf.rs").exists(), "racine + chemin, pas dossier+dossier");
+        assert!(!dir.join("src/src/neuf.rs").exists());
         let _ = std::fs::remove_dir_all(dir);
     }
 

@@ -20,8 +20,9 @@ fn main() {
              Ctrl+F/R/G chercher · remplacer · aller à la ligne\n\
              Ctrl+T     explorateur de fichiers (rust-nano . ouvre sur le dossier)\n\
              Ctrl+O     recherche de fichiers flottante (filtre flou)\n\
-             F2         changer de panneau (éditeur → explorateur → recherche)\n\
-                        (Alt+Tab, Ctrl+Tab ou Shift+Tab si le système les livre)\n\
+             F2         changer de panneau (éditeur → explorateur → recherche → terminal)\n\
+             F3         terminal intégré · F4 en-tête de fichier auto\n\
+             (dans l'explorateur : ^N nouveau · ^R renommer · ^D supprimer)\n\
              Échap      annuler / revenir"
         );
         return;
