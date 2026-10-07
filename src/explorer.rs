@@ -34,17 +34,23 @@ pub struct Explorer {
     filter: String,
     /// Chemin absolu → marqueur git ('M' modifié, 'A' ajouté, '?' non suivi).
     git: HashMap<PathBuf, char>,
+    /// bascule « . » : montrer les dotfiles (.gitignore, .env…)
+    show_hidden: bool,
 }
 
-/// Entrées jamais montrées : le bruit, pas le signal.
-fn is_hidden(name: &str) -> bool {
+/// Bruit de build, jamais montré (même avec la bascule dotfiles).
+fn is_noise(name: &str) -> bool {
+    matches!(name, "target" | "node_modules" | "__pycache__" | "dist" | ".git")
+}
+
+/// Dotfile : visible seulement si la bascule `.` est active.
+fn is_dotfile(name: &str) -> bool {
     name.starts_with('.')
-        || matches!(name, "target" | "node_modules" | "__pycache__" | "dist")
 }
 
 /// Lit un répertoire : dossiers d'abord, puis fichiers, alphabétique
 /// insensible à la casse (comme Finder).
-fn read_sorted(dir: &Path) -> Vec<(PathBuf, bool)> {
+fn read_sorted(dir: &Path, show_hidden: bool) -> Vec<(PathBuf, bool)> {
     let Ok(rd) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
@@ -52,11 +58,8 @@ fn read_sorted(dir: &Path) -> Vec<(PathBuf, bool)> {
         .flatten()
         .map(|e| e.path())
         .filter(|p| {
-            !is_hidden(
-                p.file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or_default(),
-            )
+            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+            !is_noise(name) && (show_hidden || !is_dotfile(name))
         })
         .map(|p| (p.clone(), p.is_dir()))
         .collect();
@@ -133,6 +136,7 @@ impl Explorer {
             sel: 0,
             scroll: 0,
             filter: String::new(),
+            show_hidden: false,
         };
         ex.refresh();
         ex
@@ -167,7 +171,7 @@ impl Explorer {
     }
 
     fn push_rows(&mut self, dir: &Path, depth: usize) {
-        for (path, is_dir) in read_sorted(dir) {
+        for (path, is_dir) in read_sorted(dir, self.show_hidden) {
             let expanded = self.expanded.contains(&path);
             let name = path
                 .file_name()
@@ -225,7 +229,7 @@ impl Explorer {
     }
 
     fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
-        for (path, is_dir) in read_sorted(dir) {
+        for (path, is_dir) in read_sorted(dir, false) {
             if is_dir {
                 Self::walk(&path, out);
             } else {
@@ -344,6 +348,13 @@ impl Explorer {
         self.refresh();
     }
 
+    /// « . » : montre/cache les dotfiles dans l'arbre.
+    pub fn toggle_hidden(&mut self) -> bool {
+        self.show_hidden = !self.show_hidden;
+        self.refresh();
+        self.show_hidden
+    }
+
     /// Vide le filtre ; vrai s'il y avait quelque chose à effacer.
     pub fn clear_filter(&mut self) -> bool {
         let had = !self.filter.is_empty();
@@ -404,7 +415,7 @@ impl FileSearch {
     }
 
     fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
-        for (path, is_dir) in read_sorted(dir) {
+        for (path, is_dir) in read_sorted(dir, false) {
             if is_dir {
                 Self::collect(&path, out);
             } else {
@@ -597,6 +608,20 @@ mod tests {
         assert_eq!(fs.sel(), fs.len() - 1, "borné en bas");
         fs.home();
         assert_eq!(fs.sel(), 0);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn point_bascule_les_dotfiles() {
+        let root = fixture(); // contient .cache/x
+        let mut ex = Explorer::new(root.clone());
+        let names: Vec<&str> = ex.rows().iter().map(|r| r.name.as_str()).collect();
+        assert!(!names.contains(&".cache"), "caché par défaut");
+        assert!(ex.toggle_hidden(), "activé");
+        let names: Vec<&str> = ex.rows().iter().map(|r| r.name.as_str()).collect();
+        assert!(names.contains(&".cache"), "visible après « . »");
+        assert!(!names.contains(&"target"), "le bruit reste caché");
+        assert!(!ex.toggle_hidden(), "désactivé");
         let _ = fs::remove_dir_all(root);
     }
 
