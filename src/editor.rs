@@ -2144,7 +2144,7 @@ fn file_icon_dev(name: &str) -> &'static str {
     let lower = name.to_ascii_lowercase();
     let ext = lower.rsplit('.').next().unwrap_or("");
     match ext {
-        "c" | "h" => "\u{E771}",                    // dev-c_lang
+        "c" | "h" => "\u{E649}",                    // seti-c — C net, ouverture à droite
         "rs" => "\u{E7A8}",                         // dev-rust
         "py" => "\u{E73C}",                         // dev-python
         "js" | "mjs" => "\u{E60C}",                 // seti-javascript
@@ -2520,13 +2520,16 @@ fn loop_run(
         if let Some(term) = &mut ed.term {
             term.poll();
         }
+        // le scroll se calcule sur la zone INTÉRIEURE de la boîte éditeur :
+        // barres (2) + bordures (2) + terminal (TERM_H si ouvert) +
+        // explorateur (EXPL_W + souffle) — sinon le curseur traverse les
+        // bordures en bas de fichier
         let size = terminal.size()?;
-        let text_w = if ed.explorer.is_some() {
-            size.width.saturating_sub(EXPL_W)
-        } else {
-            size.width
-        };
-        ed.keep_cursor_visible(size.height.saturating_sub(2) as usize, text_w as usize);
+        let term_h = if ed.term.is_some() { TERM_H } else { 0 };
+        let expl_w = if ed.explorer.is_some() { EXPL_W + 1 } else { 0 };
+        let inner_h = size.height.saturating_sub(2 + 2 + term_h);
+        let inner_w = size.width.saturating_sub(expl_w + 2);
+        ed.keep_cursor_visible(inner_h as usize, inner_w as usize);
         terminal.draw(|frame| draw(frame, ed))?;
         // poll avec timeout : la boucle doit se réveiller pour lire les
         // réponses IA/norme/build qui arrivent en tâche de fond
@@ -3013,7 +3016,7 @@ other.rs:1:1: error: pas notre fichier
         assert!(!text.contains(" editeur"), "plus de titre éditeur");
         assert!(!text.contains(" explorer "), "plus de titre explorateur");
         assert!(text.contains("demo.c"), "le nom reste dans le breadcrumb");
-        assert!(text.contains("\u{E771}"), "icône C (devicon)");
+        assert!(text.contains("\u{E649}"), "icône C (seti-c)");
         assert!(text.contains("\u{E7A8}"), "icône Rust (devicon)");
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -3021,7 +3024,7 @@ other.rs:1:1: error: pas notre fichier
     /// Le mapping langage → icône devicon (codepoints de la fonte installée).
     #[test]
     fn icones_par_langage() {
-        assert_eq!(file_icon("main.c", false), "\u{E771}");
+        assert_eq!(file_icon("main.c", false), "\u{E649}");
         assert_eq!(file_icon("lib.rs", false), "\u{E7A8}");
         assert_eq!(file_icon("x.py", false), "\u{E73C}");
         assert_eq!(file_icon("Makefile", false), "\u{E673}");
